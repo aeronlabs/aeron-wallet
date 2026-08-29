@@ -32,6 +32,9 @@ need ETH: the facilitator relays the transaction and pays gas.
 | `balance` | ETH and USDG balances, read from chain. |
 | `pay <url> [json]` | Call an x402 endpoint, paying if it answers 402. |
 | `history` | The last 10 payments, from the local log. |
+| `session create` | Mint a scoped session: hosts, budget, per-call cap, expiry. |
+| `session list` | Every session, what it spent, and whether it is still live. |
+| `session revoke <id>` | Kill a session. It stops paying on its next call. |
 | `mcp` | Run as an MCP server over stdio. The default with no arguments. |
 
 ## MCP
@@ -47,7 +50,47 @@ need ETH: the facilitator relays the transaction and pays gas.
 }
 ```
 
-Four tools: `get_address`, `get_balance`, `pay`, `history`.
+Four tools: `get_address`, `get_balance`, `pay`, `history`. An unbound server
+also gets `create_session`, `list_sessions`, and `revoke_session`.
+
+## Sessions
+
+A session is a scope you can hand to an agent without handing over the wallet.
+It names the hosts that may be paid, a total budget, a per-call cap, and an
+expiry:
+
+```bash
+aeron-wallet session create --host inference.aeron.sh --budget 0.25 --ttl 2h
+```
+
+That prints a token, once. Bind a server to it and every call through that
+server inherits the scope:
+
+```json
+{
+  "mcpServers": {
+    "aeron-wallet": {
+      "command": "npx",
+      "args": ["-y", "aeron-wallet", "mcp"],
+      "env": { "AERON_WALLET_SESSION": "<token>" }
+    }
+  }
+}
+```
+
+A bound server deliberately has no session tools. An agent that could mint
+itself a wider session would not be contained by one. It also cannot reach a
+host outside the scope: the wallet refuses before the request goes out, so an
+agent talked into paying an attacker's endpoint never contacts it.
+
+Revoking takes effect on the next call, including for a server already
+running, because the scope is re-read every time rather than captured at
+startup.
+
+`aeron-wallet pay --session <token> <url>` applies a scope to a single call.
+
+Sessions narrow the wallet; they never widen it. The caps below still apply
+underneath, so a $5 session on a $1/day wallet spends $1 a day.
 
 ## Your key
 
@@ -83,6 +126,7 @@ The wallet refuses to sign above either cap, so a loop cannot drain it.
 | `USDG_ADDRESS` | `0x5fc5360d0400a0fd4f2af552add042d716f1d168` |
 | `AERON_WALLET_DIR` | `~/.aeron/wallet` |
 | `AERON_WALLET_KEY` | unset. Overrides the stored key. |
+| `AERON_WALLET_SESSION` | unset. Binds the whole process to one session. |
 
 ## Where payments go
 

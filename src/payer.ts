@@ -4,6 +4,8 @@ import { hashDomain, type Address, type Hex, type PublicClient } from 'viem'
 import type { PrivateKeyAccount } from 'viem/accounts'
 import type { WalletConfig } from './config.js'
 import type { History } from './history.js'
+import { checkSession, type SessionBinding } from './sessions.js'
+export type { SessionBinding }
 
 /** EIP-3009 typed data, mirrored from the facilitator side. */
 const TRANSFER_WITH_AUTHORIZATION_TYPES = {
@@ -84,9 +86,20 @@ export type PayerDeps = {
   readonly account: PrivateKeyAccount
   readonly history: History
   readonly domain: Eip712Domain
+  readonly binding?: SessionBinding | null
   readonly fetchImpl?: typeof fetch
   readonly now?: () => number
 }
+
+/** Refused by the wallet before any request went out. */
+const refused = (reason: string, amountUsd = 0): PayResult => ({
+  paid: false,
+  status: 0,
+  amountUsd,
+  transaction: null,
+  body: '',
+  reason,
+})
 
 /**
  * The x402 client flow: call, read the 402 offer, enforce budget caps, sign
@@ -96,6 +109,15 @@ export async function payX402(url: string, init: RequestInit, deps: PayerDeps): 
   const { cfg, account, history, domain } = deps
   const fetchImpl = deps.fetchImpl ?? fetch
   const now = deps.now ?? (() => Math.floor(Date.now() / 1000))
+
+  // Scope first: an out-of-scope host should never even be contacted.
+  const binding = deps.binding ?? null
+  if (binding) {
+    const session = binding.current()
+    if (!session) return refused('this session is no longer active')
+    const preflight = checkSession(session, { url, amountUsd: 0, now: Date.now() })
+    if (!preflight.ok) return refused(preflight.reason)
+  }
 
   const first = await fetchImpl(url, init)
   const firstBody = await first.text()
@@ -120,6 +142,14 @@ export async function payX402(url: string, init: RequestInit, deps: PayerDeps): 
     return {
       paid: false, status: 402, amountUsd, transaction: null, body: firstBody,
       reason: `amount $${amountUsd} exceeds per-call cap $${cfg.MAX_PER_CALL_USD}`,
+    }
+  }
+  if (binding) {
+    const session = binding.current()
+    if (!session) return refused('this session is no longer active', amountUsd)
+    const outcome = checkSession(session, { url, amountUsd, now: Date.now() })
+    if (!outcome.ok) {
+      return { paid: false, status: 402, amountUsd, transaction: null, body: firstBody, reason: outcome.reason }
     }
   }
   const spent = history.spentTodayUsd()
@@ -182,6 +212,7 @@ export async function payX402(url: string, init: RequestInit, deps: PayerDeps): 
   }
 
   const settled = second.status < 400
+  if (settled && binding) binding.recordSpend(amountUsd)
   history.append({
     ts: new Date().toISOString(),
     url,

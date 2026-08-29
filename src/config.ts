@@ -16,6 +16,12 @@ const envSchema = z.object({
     .optional()
     .or(z.literal('').transform(() => undefined)),
   AERON_WALLET_DIR: z.string().default(join(homedir(), '.aeron', 'wallet')),
+  /** Bind this process to one session. The scope then applies to every call. */
+  AERON_WALLET_SESSION: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional()
+    .or(z.literal('').transform(() => undefined)),
   /** Budget caps, USD. The wallet refuses to sign above these. */
   MAX_PER_CALL_USD: z.coerce.number().positive().default(0.05),
   DAILY_CAP_USD: z.coerce.number().positive().default(1),
