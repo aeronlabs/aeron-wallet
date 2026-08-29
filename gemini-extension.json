@@ -1,0 +1,19 @@
+{
+  "name": "aeron-wallet",
+  "version": "0.2.0",
+  "description": "A non-custodial wallet your agent can pay with: USDG on Robinhood Chain, x402 answered automatically, inside budget caps and scoped sessions.",
+  "mcpServers": {
+    "aeron-wallet": {
+      "command": "npx",
+      "args": ["-y", "aeron-wallet@0.2.0", "mcp"]
+    }
+  },
+  "settings": [
+    {
+      "name": "Session token",
+      "description": "Optional. Bind this wallet to one scoped session, so the agent can only pay the hosts, amounts, and window that session allows. Create one with: aeron-wallet session create",
+      "envVar": "AERON_WALLET_SESSION",
+      "sensitive": true
+    }
+  ]
+}

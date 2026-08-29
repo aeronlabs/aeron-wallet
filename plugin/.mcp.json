@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "aeron-wallet": {
+      "command": "npx",
+      "args": ["-y", "aeron-wallet@0.2.0", "mcp"]
+    }
+  }
+}

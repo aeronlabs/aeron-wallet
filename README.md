@@ -37,7 +37,32 @@ need ETH: the facilitator relays the transaction and pays gas.
 | `session revoke <id>` | Kill a session. It stops paying on its next call. |
 | `mcp` | Run as an MCP server over stdio. The default with no arguments. |
 
-## MCP
+## Install it in an agent
+
+**Claude Code**
+
+```
+/plugin marketplace add aeronlabs/aeron-wallet
+/plugin install aeron-wallet@aeronlabs
+```
+
+**Cursor**
+
+[![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](cursor://anysphere.cursor-deeplink/mcp/install?name=aeron-wallet&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImFlcm9uLXdhbGxldCIsIm1jcCJdfQ==)
+
+**Gemini CLI**
+
+```bash
+gemini extensions install https://github.com/aeronlabs/aeron-wallet
+```
+
+**VS Code**
+
+```bash
+code --add-mcp '{"name":"aeron-wallet","command":"npx","args":["-y","aeron-wallet","mcp"]}'
+```
+
+**Anything else that speaks MCP**
 
 ```json
 {
@@ -127,6 +152,13 @@ The wallet refuses to sign above either cap, so a loop cannot drain it.
 | `AERON_WALLET_DIR` | `~/.aeron/wallet` |
 | `AERON_WALLET_KEY` | unset. Overrides the stored key. |
 | `AERON_WALLET_SESSION` | unset. Binds the whole process to one session. |
+
+## Releases
+
+Published from a tag by GitHub Actions using npm trusted publishing, so no
+long-lived npm token exists to leak and every tarball carries a provenance
+attestation: proof of the commit and workflow it was built from. Verify with
+`npm audit signatures` after installing.
 
 ## Where payments go
 

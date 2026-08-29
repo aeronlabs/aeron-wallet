@@ -1,0 +1,29 @@
+# Releases come from a tag, built here, never from a laptop. npm mints a
+# short-lived OIDC token for this workflow, so no npm token exists to leak,
+# and it attaches a provenance attestation: proof that the tarball on npm was
+# built from this commit, in this repo, by this workflow.
+#
+# One-time setup on npmjs.com: package settings -> Trusted Publisher ->
+# GitHub Actions, repo aeronlabs/aeron-wallet, workflow publish.yml.
+name: publish
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm ci
+      # prepublishOnly runs typecheck, tests, and build again at publish time.
+      - run: npm publish
