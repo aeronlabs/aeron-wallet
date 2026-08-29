@@ -1,0 +1,54 @@
+{
+  "name": "aeron-wallet",
+  "version": "0.1.1",
+  "mcpName": "io.github.aeronlabs/aeron-wallet",
+  "description": "Non-custodial agent wallet for Robinhood Chain. Pays x402 requests in USDG. Ships as a CLI and an MCP server.",
+  "license": "MIT",
+  "homepage": "https://aeron.sh/wallet/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aeronlabs/aeron-wallet.git"
+  },
+  "type": "module",
+  "bin": {
+    "aeron-wallet": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "x402",
+    "mcp",
+    "agent",
+    "wallet",
+    "usdg",
+    "stablecoin",
+    "micropayments",
+    "robinhood-chain"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && chmod +x dist/cli.js",
+    "mcp": "tsx src/cli.ts mcp",
+    "cli": "tsx src/cli.ts",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm run test && npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.21.1",
+    "viem": "^2.44.3",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@vitest/coverage-v8": "^3.2.4",
+    "fastify": "^5.6.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
