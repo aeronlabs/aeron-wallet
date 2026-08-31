@@ -10,6 +10,8 @@ name: publish
 on:
   push:
     tags: ['v*']
+  # Lets a failed release be retried without moving the tag.
+  workflow_dispatch:
 
 permissions:
   id-token: write
@@ -31,5 +33,18 @@ jobs:
         with:
           node-version: '24'
       - run: npm ci
+      # Trusted publishing needs npm to exchange its OIDC identity for a
+      # short-lived token. When that does not happen the registry's answer is
+      # indistinguishable from a misconfigured publisher, so the inputs are
+      # printed rather than guessed at. Presence only - never the values.
+      - name: OIDC preflight
+        run: |
+          echo "npm         $(npm --version)"
+          echo "registry    $(npm config get registry)"
+          echo "userconfig  ${NPM_CONFIG_USERCONFIG:-<unset>}"
+          echo "id-token url set: $([ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ] && echo yes || echo no)"
+          echo "id-token tok set: $([ -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" ] && echo yes || echo no)"
+          echo "repo        ${GITHUB_REPOSITORY}"
+          echo "workflow    ${GITHUB_WORKFLOW_REF}"
       # prepublishOnly runs typecheck, tests, and build again at publish time.
       - run: npm publish
