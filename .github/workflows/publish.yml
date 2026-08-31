@@ -20,10 +20,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      # No registry-url on purpose. Setting it makes setup-node write an
+      # .npmrc containing `_authToken=${NODE_AUTH_TOKEN}`, and with no token
+      # secret configured that expands to the literal placeholder
+      # XXXXX-XXXXX-XXXXX-XXXXX. npm then authenticates with that garbage
+      # instead of exchanging its OIDC identity, and the registry answers 404
+      # — which reads exactly like a missing trusted publisher and is not.
+      # registry.npmjs.org is the default anyway.
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
       - run: npm ci
       # prepublishOnly runs typecheck, tests, and build again at publish time.
       - run: npm publish
