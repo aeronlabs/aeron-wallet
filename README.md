@@ -142,6 +142,31 @@ The wallet refuses to sign above either cap, so a loop cannot drain it.
 | `MAX_PER_CALL_USD` | `0.05` | Largest single payment. |
 | `DAILY_CAP_USD` | `1` | Total for the current UTC day. |
 
+## What a result means
+
+A request that comes back 4xx is not one situation, it is three, and they
+differ in the only way that matters: whether the money left the wallet. The
+signal is the settlement receipt — a service that settled returns
+`X-PAYMENT-RESPONSE` with a transaction hash, and one that did not, does not.
+
+| `status` | Charged | What happened |
+|---|---|---|
+| `settled` | yes | The service answered. `reason` is set only in the bad case below. |
+| `rejected` | no | HTTP 402. The service refused the payment; the authorization is unspent. |
+| `failed` | no | The service returned an error *and declined to charge* — usually its own upstream failed. |
+
+The case worth naming: a `settled` row **with** a `reason` means the money
+moved and nothing came back. That is the only outcome where the wallet is out
+of pocket for nothing, so it is reported as itself rather than folded in with
+refusals that cost nothing.
+
+Only `settled` counts against `DAILY_CAP_USD`. A refusal and an upstream
+failure leave the balance untouched, so neither eats into the cap.
+
+`reason` quotes the service's own message when it gave one, instead of a
+generic phrase — an agent operator reading a log needs to know whether to
+retry, top up, or fix the seller.
+
 ## Configuration
 
 | Variable | Default |

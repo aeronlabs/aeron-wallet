@@ -1,11 +1,11 @@
 {
   "name": "aeron-wallet",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A non-custodial wallet your agent can pay with: USDG on Robinhood Chain, x402 answered automatically, inside budget caps and scoped sessions.",
   "mcpServers": {
     "aeron-wallet": {
       "command": "npx",
-      "args": ["-y", "aeron-wallet@0.2.0", "mcp"]
+      "args": ["-y", "aeron-wallet@0.3.0", "mcp"]
     }
   },
   "settings": [

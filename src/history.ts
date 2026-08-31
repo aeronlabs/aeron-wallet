@@ -49,7 +49,9 @@ export function createHistory(cfg: WalletConfig): History {
       const midnight = new Date(now)
       midnight.setHours(0, 0, 0, 0)
       return readAll()
-        .filter((r) => r.status === 'settled' && new Date(r.ts) >= midnight)
+        // Only 'settled' rows moved money. A refusal and an upstream failure both
+    // leave the balance untouched, so neither may eat into the daily cap.
+    .filter((r) => r.status === 'settled' && new Date(r.ts) >= midnight)
         .reduce((sum, r) => sum + r.amountUsd, 0)
     },
   }

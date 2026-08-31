@@ -5,6 +5,7 @@ import type { PrivateKeyAccount } from 'viem/accounts'
 import type { WalletConfig } from './config.js'
 import type { History } from './history.js'
 import { checkSession, type SessionBinding } from './sessions.js'
+import { describeOutcome } from './outcome.js'
 export type { SessionBinding }
 
 /** EIP-3009 typed data, mirrored from the facilitator side. */
@@ -211,19 +212,21 @@ export async function payX402(url: string, init: RequestInit, deps: PayerDeps): 
     }
   }
 
-  const settled = second.status < 400
-  if (settled && binding) binding.recordSpend(amountUsd)
+  // Whether money moved is the settlement receipt's business, not the status
+  // code's: a service can refuse to charge and still answer 4xx.
+  const outcome = describeOutcome(second.status, transaction, secondBody)
+  if (outcome.charged && binding) binding.recordSpend(amountUsd)
   history.append({
     ts: new Date().toISOString(),
     url,
     amountUsd,
     payer: account.address,
     transaction,
-    status: settled ? 'settled' : 'rejected',
-    reason: settled ? undefined : secondBody.slice(0, 200),
+    status: outcome.status,
+    ...(outcome.reason ? { reason: outcome.reason } : {}),
   })
   return {
-    paid: settled, status: second.status, amountUsd, transaction, body: secondBody,
-    reason: settled ? undefined : 'payment rejected by the service',
+    paid: outcome.ok, status: second.status, amountUsd, transaction, body: secondBody,
+    ...(outcome.reason ? { reason: outcome.reason } : {}),
   }
 }
