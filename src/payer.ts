@@ -1,11 +1,12 @@
 import { randomBytes } from 'node:crypto'
-import { z } from 'zod'
 import { hashDomain, type Address, type Hex, type PublicClient } from 'viem'
 import type { PrivateKeyAccount } from 'viem/accounts'
 import type { WalletConfig } from './config.js'
 import type { History } from './history.js'
 import { checkSession, type SessionBinding } from './sessions.js'
 import { describeOutcome } from './outcome.js'
+import { readOffers, selectOffer } from './offers.js'
+import { paymentAttempts } from './payment-header.js'
 export type { SessionBinding }
 
 /** EIP-3009 typed data, mirrored from the facilitator side. */
@@ -58,20 +59,6 @@ export async function resolveDomain(publicClient: PublicClient, cfg: WalletConfi
   }
   throw new Error('could not match the token EIP-712 domain version')
 }
-
-const requirementsSchema = z.looseObject({
-  scheme: z.literal('exact'),
-  network: z.string(),
-  maxAmountRequired: z.string().regex(/^\d+$/),
-  payTo: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
-  asset: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
-  maxTimeoutSeconds: z.number().optional(),
-})
-
-const body402Schema = z.looseObject({
-  x402Version: z.number(),
-  accepts: z.array(requirementsSchema).min(1),
-})
 
 export type PayResult = {
   readonly paid: boolean
@@ -126,19 +113,19 @@ export async function payX402(url: string, init: RequestInit, deps: PayerDeps): 
     return { paid: false, status: first.status, amountUsd: 0, transaction: null, body: firstBody }
   }
 
-  const parsed = body402Schema.safeParse(JSON.parse(firstBody))
-  if (!parsed.success) {
-    return { paid: false, status: 402, amountUsd: 0, transaction: null, body: firstBody, reason: 'unrecognized 402 offer' }
+  // A merchant states its offers in the body, in the payment-required header,
+  // or both, and lists every chain it takes. The one this wallet can settle is
+  // rarely the first, so it is searched for rather than assumed.
+  const choice = selectOffer(readOffers(firstBody, first.headers.get('payment-required')), {
+    network: cfg.network,
+    asset: cfg.USDG_ADDRESS,
+  })
+  if (!choice.ok) {
+    return { paid: false, status: 402, amountUsd: 0, transaction: null, body: firstBody, reason: choice.reason }
   }
-  const offer = parsed.data.accepts[0]!
-  if (offer.network !== cfg.network) {
-    return { paid: false, status: 402, amountUsd: 0, transaction: null, body: firstBody, reason: `network mismatch: ${offer.network}` }
-  }
-  if (offer.asset.toLowerCase() !== cfg.USDG_ADDRESS.toLowerCase()) {
-    return { paid: false, status: 402, amountUsd: 0, transaction: null, body: firstBody, reason: 'offer asset is not USDG' }
-  }
+  const offer = choice.offer
 
-  const amountUsd = Number(offer.maxAmountRequired) / 1e6
+  const amountUsd = Number(offer.atomicAmount) / 1e6
   if (amountUsd > cfg.MAX_PER_CALL_USD) {
     return {
       paid: false, status: 402, amountUsd, transaction: null, body: firstBody,
@@ -165,7 +152,7 @@ export async function payX402(url: string, init: RequestInit, deps: PayerDeps): 
   const authorization = {
     from: account.address,
     to: offer.payTo as Address,
-    value: BigInt(offer.maxAmountRequired),
+    value: BigInt(offer.atomicAmount),
     validAfter: BigInt(t - 60),
     validBefore: BigInt(t + (offer.maxTimeoutSeconds ?? 60) + 540),
     nonce: `0x${randomBytes(32).toString('hex')}` as Hex,
@@ -176,30 +163,31 @@ export async function payX402(url: string, init: RequestInit, deps: PayerDeps): 
     primaryType: 'TransferWithAuthorization',
     message: authorization,
   })
-  const paymentHeader = Buffer.from(
-    JSON.stringify({
-      x402Version: 1,
-      scheme: 'exact',
-      network: cfg.network,
-      payload: {
-        signature,
-        authorization: {
-          from: authorization.from,
-          to: authorization.to,
-          value: String(authorization.value),
-          validAfter: String(authorization.validAfter),
-          validBefore: String(authorization.validBefore),
-          nonce: authorization.nonce,
-        },
-      },
-    }),
-  ).toString('base64')
-
-  const second = await fetchImpl(url, {
-    ...init,
-    headers: { ...(init.headers as Record<string, string> | undefined), 'x-payment': paymentHeader },
+  const attempts = paymentAttempts(offer, {
+    signature,
+    authorization: {
+      from: authorization.from,
+      to: authorization.to,
+      value: String(authorization.value),
+      validAfter: String(authorization.validAfter),
+      validBefore: String(authorization.validBefore),
+      nonce: authorization.nonce,
+    },
   })
-  const secondBody = await second.text()
+
+  // Offer the payment in the form the version asks for, then in the other one
+  // if it is refused outright. Both carry the same authorization, so at most
+  // one of them can ever settle.
+  let second!: Response
+  let secondBody = ''
+  for (const attempt of attempts) {
+    second = await fetchImpl(url, {
+      ...init,
+      headers: { ...(init.headers as Record<string, string> | undefined), [attempt.name]: attempt.value },
+    })
+    secondBody = await second.text()
+    if (second.status !== 402) break
+  }
 
   let transaction: string | null = null
   const receiptHeader = second.headers.get('x-payment-response')

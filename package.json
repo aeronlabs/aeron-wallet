@@ -1,6 +1,6 @@
 {
   "name": "aeron-wallet",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "mcpName": "io.github.aeronlabs/aeron-wallet",
   "description": "Non-custodial agent wallet for Robinhood Chain. Pays x402 requests in USDG. Ships as a CLI and an MCP server.",
   "license": "MIT",

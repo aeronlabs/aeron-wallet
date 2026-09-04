@@ -174,7 +174,121 @@ describe('payX402', () => {
     const url = typeof address === 'object' && address ? `http://127.0.0.1:${address.port}/paid` : ''
     const result = await payX402(url, { method: 'POST' }, { cfg, account, history, domain })
     expect(result.paid).toBe(false)
-    expect(result.reason).toContain('not USDG')
+    // The refusal names the token that was offered instead, so a buyer can see
+    // whether the merchant wants another chain or another token.
+    expect(result.reason).toContain('no offer in USDG on eip155:4663')
+  })
+
+  it('pays an offer that is not the first one listed', async () => {
+    const cfg = tempCfg()
+    const { account } = loadOrCreateAccount(cfg)
+    const history = createHistory(cfg)
+    server = Fastify()
+    server.post('/paid', async (req, reply) => {
+      if (!req.headers['x-payment']) {
+        // How merchants out in the open actually answer: many chains, and
+        // this rail's is somewhere down the list.
+        return reply.code(402).send({
+          x402Version: 1,
+          accepts: [
+            { scheme: 'exact', network: 'eip155:8453', amount: '1000', payTo: PAY_TO, asset: `0x${'11'.repeat(20)}` },
+            { scheme: 'exact', network: 'eip155:137', amount: '1000', payTo: PAY_TO, asset: `0x${'22'.repeat(20)}` },
+            { scheme: 'exact', network: 'eip155:4663', amount: '1000', payTo: PAY_TO, asset: USDG },
+          ],
+        })
+      }
+      return reply.send({ ok: true })
+    })
+    await server.listen({ port: 0, host: '127.0.0.1' })
+    const address = server.server.address()
+    const url = typeof address === 'object' && address ? `http://127.0.0.1:${address.port}/paid` : ''
+
+    const result = await payX402(url, { method: 'POST' }, { cfg, account, history, domain })
+    expect(result.paid).toBe(true)
+    expect(result.amountUsd).toBe(0.001)
+  })
+
+  it('pays a v2 server, which reads the payment from payment-signature', async () => {
+    const cfg = tempCfg()
+    const { account } = loadOrCreateAccount(cfg)
+    const history = createHistory(cfg)
+    server = Fastify()
+    server.post('/paid', async (req, reply) => {
+      // A v2 server does not look at X-PAYMENT at all.
+      if (!req.headers['payment-signature']) {
+        const offers = {
+          x402Version: 2,
+          accepts: [{ scheme: 'exact', network: 'eip155:4663', amount: '1000', payTo: PAY_TO, asset: USDG }],
+        }
+        return reply
+          .code(402)
+          .header('payment-required', Buffer.from(JSON.stringify(offers), 'utf8').toString('base64'))
+          .send({ altPayment: { protocol: 'proof-of-work' } })
+      }
+      const payload = JSON.parse(Buffer.from(String(req.headers['payment-signature']), 'base64').toString('utf8'))
+      if (payload.x402Version !== 2) return reply.code(402).send({ reason: 'version-mismatch' })
+      return reply.send({ ok: true })
+    })
+    await server.listen({ port: 0, host: '127.0.0.1' })
+    const address = server.server.address()
+    const url = typeof address === 'object' && address ? `http://127.0.0.1:${address.port}/paid` : ''
+
+    const result = await payX402(url, { method: 'POST' }, { cfg, account, history, domain })
+    expect(result.paid).toBe(true)
+  })
+
+  it('still pays a v1 server on X-PAYMENT', async () => {
+    const cfg = tempCfg()
+    const { account } = loadOrCreateAccount(cfg)
+    const history = createHistory(cfg)
+    server = Fastify()
+    server.post('/paid', async (req, reply) => {
+      if (!req.headers['x-payment']) {
+        return reply.code(402).send({
+          x402Version: 1,
+          accepts: [{ scheme: 'exact', network: 'eip155:4663', maxAmountRequired: '1000', payTo: PAY_TO, asset: USDG }],
+        })
+      }
+      const payload = JSON.parse(Buffer.from(String(req.headers['x-payment']), 'base64').toString('utf8'))
+      if (payload.x402Version !== 1 || payload.scheme !== 'exact') return reply.code(402).send({ reason: 'bad-shape' })
+      return reply.send({ ok: true })
+    })
+    await server.listen({ port: 0, host: '127.0.0.1' })
+    const address = server.server.address()
+    const url = typeof address === 'object' && address ? `http://127.0.0.1:${address.port}/paid` : ''
+
+    const result = await payX402(url, { method: 'POST' }, { cfg, account, history, domain })
+    expect(result.paid).toBe(true)
+  })
+
+  it('pays an offer stated only in the payment-required header', async () => {
+    const cfg = tempCfg()
+    const { account } = loadOrCreateAccount(cfg)
+    const history = createHistory(cfg)
+    server = Fastify()
+    server.post('/paid', async (req, reply) => {
+      if (!req.headers['payment-signature']) {
+        const offers = {
+          x402Version: 2,
+          accepts: [
+            { scheme: 'exact', network: 'eip155:8453', amount: '1000', payTo: PAY_TO, asset: `0x${'11'.repeat(20)}` },
+            { scheme: 'exact', network: 'eip155:4663', amount: '1000', payTo: PAY_TO, asset: USDG },
+          ],
+        }
+        return reply
+          .code(402)
+          .header('payment-required', Buffer.from(JSON.stringify(offers), 'utf8').toString('base64'))
+          .send({ altPayment: { protocol: 'proof-of-work' } })
+      }
+      return reply.send({ ok: true })
+    })
+    await server.listen({ port: 0, host: '127.0.0.1' })
+    const address = server.server.address()
+    const url = typeof address === 'object' && address ? `http://127.0.0.1:${address.port}/paid` : ''
+
+    const result = await payX402(url, { method: 'POST' }, { cfg, account, history, domain })
+    expect(result.paid).toBe(true)
+    expect(result.amountUsd).toBe(0.001)
   })
 
   it('a non-402 response passes through without paying', async () => {

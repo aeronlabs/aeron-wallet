@@ -12,7 +12,7 @@
       "source": "./plugin",
       "displayName": "Aeron Wallet",
       "description": "A non-custodial wallet your agent can pay with. Holds USDG on Robinhood Chain and answers x402 challenges on its own, inside budget caps and scoped sessions.",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "homepage": "https://aeron.sh/wallet/",
       "repository": "https://github.com/aeronlabs/aeron-wallet",
       "license": "MIT",

@@ -7,6 +7,7 @@ import { payX402, resolveDomain, type Eip712Domain } from './payer.js'
 import { startMcpServer } from './mcp.js'
 import { bindSession, createSessions } from './sessions.js'
 import { runSessionCommand } from './cli-sessions.js'
+import { parseMethod, takeFlag } from './cli-args.js'
 
 const out = (line: string) => process.stdout.write(`${line}\n`)
 
@@ -25,11 +26,10 @@ async function main(): Promise<void> {
   const [command = 'mcp', ...argv] = process.argv.slice(2)
   // A `--session <token>` flag scopes one call; AERON_WALLET_SESSION scopes
   // the whole process, which is how you hand a sub-agent a bounded server.
-  const flagAt = argv.indexOf('--session')
-  const inlineToken = flagAt === -1 ? undefined : argv[flagAt + 1]
-  if (flagAt !== -1 && !inlineToken) throw new Error('--session needs a token')
-  const rest = flagAt === -1 ? argv : [...argv.slice(0, flagAt), ...argv.slice(flagAt + 2)]
-  const token = inlineToken ?? cfg.AERON_WALLET_SESSION
+  const session = takeFlag(argv, 'session')
+  const methodFlag = takeFlag(session.rest, 'method')
+  const rest = methodFlag.rest
+  const token = session.value ?? cfg.AERON_WALLET_SESSION
   const binding = token ? bindSession(sessions, token) : null
   if (binding && !binding.current()) {
     throw new Error('that session token is unknown, revoked, or already gone')
@@ -52,11 +52,16 @@ async function main(): Promise<void> {
     }
     case 'pay': {
       const url = rest[0]
-      if (!url) throw new Error('usage: pay <url> [json-body]')
+      if (!url) throw new Error('usage: pay [--method GET] <url> [json-body]')
       const body = rest[1]
+      const method = parseMethod(methodFlag.value)
       const result = await payX402(
         url,
-        { method: 'POST', headers: { 'content-type': 'application/json' }, ...(body ? { body } : {}) },
+        {
+          method,
+          // A GET carries no body, so it should not announce one either.
+          ...(body ? { headers: { 'content-type': 'application/json' }, body } : {}),
+        },
         { cfg, account, history, domain: await domain(), binding },
       )
       out(JSON.stringify(result, null, 2))

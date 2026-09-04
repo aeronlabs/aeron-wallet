@@ -30,7 +30,7 @@ need ETH: the facilitator relays the transaction and pays gas.
 |---|---|
 | `address` | Print the wallet address. Creates the key if none exists. |
 | `balance` | ETH and USDG balances, read from chain. |
-| `pay <url> [json]` | Call an x402 endpoint, paying if it answers 402. |
+| `pay [--method GET] <url> [json]` | Call an x402 endpoint, paying if it answers 402. POST unless told otherwise. |
 | `history` | The last 10 payments, from the local log. |
 | `session create` | Mint a scoped session: hosts, budget, per-call cap, expiry. |
 | `session list` | Every session, what it spent, and whether it is still live. |
@@ -141,6 +141,41 @@ The wallet refuses to sign above either cap, so a loop cannot drain it.
 |---|---|---|
 | `MAX_PER_CALL_USD` | `0.05` | Largest single payment. |
 | `DAILY_CAP_USD` | `1` | Total for the current UTC day. |
+
+## Paying merchants you did not write
+
+Reading a 402 sounds like one line — take `accepts[0]` from the body — and that
+line works against servers written the same way this wallet was. It works
+against almost nothing else. On a survey of the machine-payable endpoints
+listed on Robinhood Chain, **not one merchant put this rail's offer first**:
+every one of them leads with Base, and the payable entry sits somewhere down a
+list of a dozen.
+
+So the offer is searched for, not assumed, across every shape merchants
+actually use:
+
+| What differs | What is done |
+|---|---|
+| Offers in the JSON body, or in a base64 `payment-required` header, or both | Both are read, and the same offer stated twice is one offer |
+| The amount is `maxAmountRequired` (v1) or `amount` (v2) | Either is accepted |
+| The list mixes chains and address formats this wallet has no key for | Non-EVM entries are skipped rather than treated as errors |
+| Several offers are payable | The cheapest one wins |
+| Nothing is payable | The refusal names what *was* offered, so the reason is actionable |
+
+### The two protocol versions are not a version number
+
+v1 carries the payment in `X-PAYMENT` and names the scheme and network at the
+top level. v2 carries it in `payment-signature`, names neither, and states the
+chosen offer verbatim in `accepted` — a rebuilt copy does not match, because
+the server compares it against what it advertised. Answering a v2 merchant in
+v1's form does not degrade; it is refused.
+
+Worse, the split is not clean in the wild: merchants advertise a v2 header
+beside a v1 body, and one host in a family of five wants `X-PAYMENT` while its
+siblings want `payment-signature`. So the payment is offered in the form the
+version asks for and, if that is refused outright, in the other one. Both
+carry the **same** signed authorization, whose EIP-3009 nonce can be spent
+exactly once — so the fallback cannot pay twice, however the server answers.
 
 ## What a result means
 
