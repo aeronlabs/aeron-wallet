@@ -1,0 +1,54 @@
+# Listing this server in the official MCP Registry, from CI rather than from a
+# laptop. The registry authenticates the `io.github.aeronlabs/*` namespace by
+# proving the workflow runs in this GitHub org — so the same OIDC identity that
+# publishes to npm publishes here, and there is no long-lived registry token to
+# expire or leak. The hand-held alternative is `mcp-publisher login github`,
+# whose token lasts days and had already expired the first time it was needed.
+#
+# Runs after a release rather than as part of it: npm has to hold the version
+# named in server.json before the registry is told to point at it.
+name: mcp-registry
+
+on:
+  workflow_run:
+    workflows: [publish]
+    types: [completed]
+  # Lets a failed listing be retried, or an older release be re-listed.
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  list:
+    # A failed publish means npm has no such version; listing it would point
+    # the registry at something nobody can install.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install mcp-publisher
+        env:
+          VERSION: v1.8.1
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/download/${VERSION}/mcp-publisher_linux_amd64.tar.gz" \
+            | tar xz mcp-publisher
+          ./mcp-publisher --version
+
+      # The version in server.json must already exist on npm, and its package
+      # must carry the matching `mcpName`, or the registry rejects the listing
+      # as unverified ownership.
+      - name: Check npm has the version server.json names
+        run: |
+          VERSION=$(node -p "require('./server.json').version")
+          echo "server.json names $VERSION"
+          PUBLISHED=$(npm view "aeron-wallet@${VERSION}" version 2>/dev/null || true)
+          if [ "$PUBLISHED" != "$VERSION" ]; then
+            echo "npm does not have aeron-wallet@${VERSION} yet" >&2
+            exit 1
+          fi
+
+      - run: ./mcp-publisher login github-oidc
+      - run: ./mcp-publisher publish
